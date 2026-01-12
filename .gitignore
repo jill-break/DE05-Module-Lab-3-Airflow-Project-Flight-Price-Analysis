@@ -1,0 +1,18 @@
+# Airflow
+logs/
+__pycache__/
+*.pyc
+.airflow/
+
+# Data files
+
+
+# OS / IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Virtual environment
+venv/
+.env/
