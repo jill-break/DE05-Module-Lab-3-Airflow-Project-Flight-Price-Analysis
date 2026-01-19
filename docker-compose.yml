@@ -1,104 +1,182 @@
-version: '3.8'
-
 x-airflow-common:
   &airflow-common
-  # Official Airflow Image
-  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.7.1}
+  build: .
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-metadata/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres_airflow/airflow
     AIRFLOW__CORE__FERNET_KEY: ''
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    # AUTO-INSTALL YOUR LAB DEPENDENCIES HERE:
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:- pandas mysql-connector-python psycopg2-binary apache-airflow-providers-mysql apache-airflow-providers-postgres}
+    AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: 10
+    PYTHONPATH: /opt/jobs:/opt/airflow/dags
+    # Connection configurations
+    AIRFLOW_CONN_SPARK_DEFAULT: 'local[*]'
+    AIRFLOW_CONN_MYSQL_STAGING: 'mysql://mysql_user:mysql_pass@mysql:3306/mysql_db'
+    AIRFLOW_CONN_POSTGRES_ANALYTICS: 'postgres://psql_user:psql_pass@postgres_analytics:5432/psql_db'
+    AIRFLOW_CONN_FS_DEFAULT: '{"conn_type": "fs", "extra": {"path": "/opt/data"}}'
   volumes:
-    - ./dags:/opt/airflow/dags
-    - ./logs:/opt/airflow/logs
-    - ./plugins:/opt/airflow/plugins
-    - ./data:/opt/airflow/data  # Place your CSV file here
-  user: "${AIRFLOW_UID:-50000}:0"
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
   depends_on:
     &airflow-common-depends-on
-    postgres-metadata:
+    postgres_airflow:
       condition: service_healthy
 
 services:
-  # ----------------------------------------
-  # 1. Airflow Core Components
-  # ----------------------------------------
-  postgres-metadata:
+  # PostgreSQL for Airflow metadata
+  postgres_airflow:
     image: postgres:13
+    container_name: postgres_airflow
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
       POSTGRES_DB: airflow
     volumes:
-      - postgres-db-volume:/var/lib/postgresql/data
+      - postgres_airflow_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 5s
       retries: 5
+    restart: unless-stopped
+    networks:
+      - flight_network
 
-  airflow-webserver:
+  # Airflow Init - MUST come before webserver and scheduler
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    container_name: airflow-init
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@flight.com \
+          --password admin 2>/dev/null || true
+        echo "Airflow initialized successfully"
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: 'admin'
+      _AIRFLOW_WWW_USER_PASSWORD: 'admin'
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    networks:
+      - flight_network
+    restart: "no"  # Don't restart - it should run once and exit
+
+  # Airflow Webserver
+  airflow-server:
     <<: *airflow-common
     command: webserver
+    container_name: airflow-server
     ports:
       - "8080:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./spark:/opt/jobs
+      - ./data:/opt/data
+      - ./jars:/opt/jars
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
-      interval: 10s
+      interval: 30s
       timeout: 10s
       retries: 5
-    restart: always
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      postgres_airflow:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully  # Wait for init to complete
+      mysql:
+        condition: service_healthy
+      postgres_analytics:
+        condition: service_healthy
+    networks:
+      - flight_network
 
+  # Airflow Scheduler
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
-    restart: always
-
-  airflow-init:
-    <<: *airflow-common
-    command: version
-    environment:
-      <<: *airflow-common-env
-      _AIRFLOW_DB_UPGRADE: 'true'
-      _AIRFLOW_WWW_USER_CREATE: 'true'
-      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
-      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
-    user: "0:0"
-
-  # ----------------------------------------
-  # 2. Project Requirements (Lab Databases)
-  # ----------------------------------------
-  
-  # MySQL (Staging Database)
-  mysql-staging:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: staging_db
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
-    ports:
-      - "3307:3306" # Mapped to 3307 to avoid conflict if you have local MySQL
+    container_name: airflow-scheduler
     volumes:
-      - mysql-db-volume:/var/lib/mysql
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./spark:/opt/jobs
+      - ./data:/opt/data
+      - ./jars:/opt/jars
+    restart: unless-stopped
+    depends_on:
+      postgres_airflow:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully  # Wait for init to complete
+      mysql:
+        condition: service_healthy
+      postgres_analytics:
+        condition: service_healthy
+    networks:
+      - flight_network
 
-  # PostgreSQL (Analytics Database)
-  postgres-analytics:
-    image: postgres:13
+  # MySQL for staging
+  mysql:
+    image: mysql:8.4
+    container_name: staging
     environment:
-      POSTGRES_USER: analytics_user
-      POSTGRES_PASSWORD: analytics_password
-      POSTGRES_DB: analytics_db
-    ports:
-      - "5433:5432" # Mapped to 5433 to avoid conflict with local Postgres
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: mysql_db
+      MYSQL_USER: mysql_user
+      MYSQL_PASSWORD: mysql_pass
     volumes:
-      - analytics-db-volume:/var/lib/postgresql/data
+      - mysql_staging_data:/var/lib/mysql
+      - ./sql/init_staging.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "mysql_user", "-pmysql_pass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - flight_network
+
+  # PostgreSQL for Analytics
+  postgres_analytics:
+    image: postgres:14-alpine
+    container_name: analytics
+    environment:
+      POSTGRES_USER: psql_user
+      POSTGRES_PASSWORD: psql_pass
+      POSTGRES_DB: psql_db
+    volumes:
+      - postgres_analytics_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U psql_user -d psql_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - flight_network
 
 volumes:
-  postgres-db-volume:
-  mysql-db-volume:
-  analytics-db-volume:
+  postgres_airflow_data:
+  postgres_analytics_data:
+  mysql_staging_data:
+
+networks:
+  flight_network:
+    driver: bridge
