@@ -15,4 +15,5 @@ Thumbs.db
 
 # Virtual environment
 venv/
-.env/
+
+.env
