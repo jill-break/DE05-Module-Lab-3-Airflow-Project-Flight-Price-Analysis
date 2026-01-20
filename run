@@ -1,9 +1,0 @@
-python -m venv venv
-
-.venv\Script\activate
-
-mkdir dags logs plugins data
-
-docker-compose up airflow-init
-
-docker-compose up -d
