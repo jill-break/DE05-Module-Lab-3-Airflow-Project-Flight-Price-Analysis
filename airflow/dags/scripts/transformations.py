@@ -9,10 +9,9 @@ def transform_flight_data(df: pd.DataFrame):
     df['Tax & Surcharge (BDT)'] = pd.to_numeric(df['Tax & Surcharge (BDT)'], errors='coerce').fillna(0)
     
     # 2. Requirement: Calculate Total Fare = Base Fare + Tax & Surcharge
-    # We do this to ensure data consistency regardless of the source value
     df['Total Fare (BDT)'] = df['Base Fare (BDT)'] + df['Tax & Surcharge (BDT)']
     
-    # 3. Basic Cleaning for Spark
+    # 3. Cleaning for Spark
     # Standardize column names for easier Spark SQL handling later
     df.columns = [c.replace(' ', '_').replace('(', '').replace(')', '').lower() for c in df.columns]
     

@@ -11,7 +11,6 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 # 1. Load from MySQL (Silver Table: flight_prices_clean)
-# These credentials match your docker-compose environment variables
 mysql_url = "jdbc:mysql://mysql:3306/mysql_db"
 mysql_props = {
     "user": "mysql_user", 
@@ -31,7 +30,7 @@ airline_performance = df.groupBy("airline").agg(
 
 # 3. KPI: Seasonal Fare Variation
 # Requirement: Define peak seasons (Eid, Winter) and compare to non-peak
-# We use rlike for case-insensitive matching of key holiday terms
+# Used rlike for case-insensitive matching of key holiday terms
 peak_pattern = "Winter|Eid|Holiday"
 df_seasonal = df.withColumn("season_category", 
     when(col("seasonality").rlike(peak_pattern), "Peak")
@@ -56,7 +55,7 @@ pg_props = {
     "driver": "org.postgresql.Driver"
 }
 
-# Senior Practice: Overwrite mode ensures idempotency for daily runs
+# Overwrite mode ensures idempotency for daily runs
 airline_performance.write.jdbc(url=pg_url, table="gold_airline_performance", mode="overwrite", properties=pg_props)
 seasonal_analysis.write.jdbc(url=pg_url, table="gold_seasonal_analysis", mode="overwrite", properties=pg_props)
 popular_routes.write.jdbc(url=pg_url, table="gold_popular_routes", mode="overwrite", properties=pg_props)

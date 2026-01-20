@@ -1,6 +1,9 @@
 import pandas as pd
 
 def run_flight_validation(df: pd.DataFrame):
+    """
+    Silver Layer: Validates data quality and performs basic cleaning.
+    """
     # Requirement: All required columns exist
     required_cols = [
         'Airline', 'Source', 'Destination', 'Base Fare (BDT)', 
