@@ -1,8 +1,9 @@
 from airflow import DAG
 from airflow.sensors.filesystem import FileSensor
 from airflow.operators.python import PythonOperator
-from airflow.providers.mysql.hooks.MySqlHook import MySqlHook
-from airflow.providers.postgres.hooks.PostgresHook import PostgresHook
+from airflow.providers.mysql.hooks.mysql import MySqlHook
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from datetime import datetime, timedelta
 import pandas as pd
 
@@ -89,10 +90,22 @@ with DAG(
         python_callable=validate_data_quality
     )
 
-    load_analytics = PythonOperator(
-        task_id='compute_kpis_and_load_postgres',
-        python_callable=load_to_postgres_analytics
+    # load_analytics = PythonOperator(
+    #     task_id='compute_kpis_and_load_postgres',
+    #     python_callable=load_to_postgres_analytics
+    # )
+
+    # Job 3: Gold Layer using Spark
+    compute_kpis_spark = SparkSubmitOperator(
+        task_id='compute_kpis_with_spark',
+        application='/opt/jobs/transform_flight_data.py', # Mapped to your ./spark folder
+        conn_id='spark_default',
+        # We need to include the MySQL and Postgres JDBC drivers here
+        jars='/opt/jars/mysql-connector-j.jar,/opt/jars/postgresql.jar',
+        dag=dag
     )
 
     # Define Dependency Flow
-    wait_for_file >> ingest_raw >> validate_data >> load_analytics
+    # wait_for_file >> ingest_raw >> validate_data >> load_analytics
+
+    wait_for_file >> ingest_raw >> validate_data >> compute_kpis_spark
