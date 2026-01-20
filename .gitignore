@@ -16,4 +16,6 @@ Thumbs.db
 # Virtual environment
 venv/
 
+# Keys and config
 .env
+
