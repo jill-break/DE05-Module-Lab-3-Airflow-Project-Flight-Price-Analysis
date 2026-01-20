@@ -95,17 +95,26 @@ with DAG(
     #     python_callable=load_to_postgres_analytics
     # )
 
-    # Job 3: Gold Layer using Spark
+   # Job 3: Gold Layer using Spark
     compute_kpis_spark = SparkSubmitOperator(
         task_id='compute_kpis_with_spark',
-        application='/opt/jobs/transform_flight_data.py', # Mapped to your ./spark folder
+        application='/opt/jobs/transformation/transform_flight_data.py',  # Mapped to your ./spark folder
         conn_id='spark_default',
+        # conf={
+        #     "spark.master": "local[*]",
+        #     "spark.driver.extraClassPath": "/opt/jars/mysql-connector-j-9.5.0.jar,/opt/jars/postgresql-42.7.6.jar"
+        #     },
+
+        name="arrow-spark",
+        # executor_memory='1g',
+        # driver_memory='1g',
         # We need to include the MySQL and Postgres JDBC drivers here
-        jars='/opt/jars/mysql-connector-j.jar,/opt/jars/postgresql.jar',
+        jars='/opt/jars/mysql-connector-j-9.5.0.jar,/opt/jars/postgresql-42.7.6.jar',
         dag=dag
     )
 
-    # Define Dependency Flow
-    # wait_for_file >> ingest_raw >> validate_data >> load_analytics
+    # Define Dependency Flow with Python Jobs
+    #wait_for_file >> ingest_raw >> validate_data >> load_analytics
 
+    # Define Dependency Flow with Spark Job
     wait_for_file >> ingest_raw >> validate_data >> compute_kpis_spark

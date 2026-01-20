@@ -11,7 +11,7 @@ x-airflow-common:
     AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: 10
     PYTHONPATH: /opt/jobs:/opt/airflow/dags
     # Connection configurations
-    AIRFLOW_CONN_SPARK_DEFAULT: 'local[*]'
+    AIRFLOW_CONN_SPARK_DEFAULT: 'spark://local[*]'
     AIRFLOW_CONN_MYSQL_STAGING: 'mysql://mysql_user:mysql_pass@mysql:3306/mysql_db'
     AIRFLOW_CONN_POSTGRES_ANALYTICS: 'postgres://psql_user:psql_pass@postgres_analytics:5432/psql_db'
     AIRFLOW_CONN_FS_DEFAULT: '{"conn_type": "fs", "extra": {"path": "/opt/data"}}'
@@ -163,7 +163,9 @@ services:
       POSTGRES_PASSWORD: psql_pass
       POSTGRES_DB: psql_db
     volumes:
-      - postgres_analytics_data:/var/lib/postgresql/data
+      - postgres_analytics_data:/var/lib/postgresql/data,
+    ports:
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U psql_user -d psql_db"]
       interval: 10s
