@@ -1,4 +1,4 @@
-from jobs.transformation.transform_flight_data import validate_fare
+from spark.transformation.transform_flight_data import validate_fare
 
 def test_fare_math_correction():
     # Case: Total is recorded wrong in CSV

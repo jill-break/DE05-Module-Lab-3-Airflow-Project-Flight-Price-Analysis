@@ -4,7 +4,7 @@ def test_seasonal_categorization(spark_fixture):
     df = spark_fixture.createDataFrame(data, ["event_name", "fare"])
     
     # Apply your KPI logic
-    from jobs.transformation.transform_flight_data import add_season_logic
+    from spark.transformation.transform_flight_data import add_season_logic
     output_df = add_season_logic(df)
     
     # Check if 'Eid' was caught by the regex
