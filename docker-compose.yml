@@ -1,8 +1,6 @@
-x-airflow-common:
-  &airflow-common
+x-airflow-common: &airflow-common
   build: .
-  environment:
-    &airflow-common-env
+  environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres_airflow/airflow
     AIRFLOW__CORE__FERNET_KEY: '${AIRFLOW_FERNET_KEY}'
@@ -11,17 +9,24 @@ x-airflow-common:
     AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: 10
     PYTHONPATH: /opt/jobs:/opt/airflow/dags
     # Connection configurations
-    AIRFLOW_CONN_SPARK_DEFAULT: 'spark://local[*]'
-    AIRFLOW_CONN_MYSQL_STAGING: 'mysql://mysql_user:mysql_pass@mysql:3306/mysql_db'
-    AIRFLOW_CONN_POSTGRES_ANALYTICS: 'postgres://psql_user:psql_pass@postgres_analytics:5432/psql_db'
+    AIRFLOW_CONN_SPARK_DEFAULT: 'spark://local'
+    AIRFLOW_CONN_MYSQL_STAGING: 'mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}'
+    AIRFLOW_CONN_POSTGRES_ANALYTICS: 'postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres_analytics:5432/${POSTGRES_DB}'
     AIRFLOW_CONN_FS_DEFAULT: '{"conn_type": "fs", "extra": {"path": "/opt/data"}}'
+
+    # Expose variables for DAGs to use in env_vars
+    MYSQL_USER: ${MYSQL_USER}
+    MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    MYSQL_DATABASE: ${MYSQL_DATABASE}
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    POSTGRES_DB: ${POSTGRES_DB}
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
     - ./airflow/plugins:/opt/airflow/plugins
     - ./data:/opt/data
-  depends_on:
-    &airflow-common-depends-on
+  depends_on: &airflow-common-depends-on
     postgres_airflow:
       condition: service_healthy
 
@@ -37,7 +42,7 @@ services:
     volumes:
       - postgres_airflow_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test: [ "CMD", "pg_isready", "-U", "airflow" ]
       interval: 5s
       retries: 5
     restart: unless-stopped
@@ -54,26 +59,26 @@ services:
       - |
         airflow db migrate
         airflow users create \
-          --username admin \
+          --username ${AIRFLOW_ADMIN_USER} \
           --firstname Admin \
           --lastname User \
           --role Admin \
-          --email admin@flight.com \
-          --password admin 2>/dev/null || true
+          --email ${AIRFLOW_ADMIN_EMAIL} \
+          --password ${AIRFLOW_ADMIN_PASSWORD} 2>/dev/null || true
         echo "Airflow initialized successfully"
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'
       _AIRFLOW_WWW_USER_CREATE: 'true'
-      _AIRFLOW_WWW_USER_USERNAME: 'admin'
-      _AIRFLOW_WWW_USER_PASSWORD: 'admin'
+      _AIRFLOW_WWW_USER_USERNAME: '${AIRFLOW_ADMIN_USER}'
+      _AIRFLOW_WWW_USER_PASSWORD: '${AIRFLOW_ADMIN_PASSWORD}'
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
     networks:
       - flight_network
-    restart: "no"  # Don't restart - it should run once and exit
+    restart: "no" # Don't restart - it should run once and exit
 
   # Airflow Webserver
   airflow-server:
@@ -90,7 +95,7 @@ services:
       - ./data:/opt/data
       - ./jars:/opt/jars
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      test: [ "CMD", "curl", "--fail", "http://localhost:8080/health" ]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -100,7 +105,7 @@ services:
       postgres_airflow:
         condition: service_healthy
       airflow-init:
-        condition: service_completed_successfully  # Wait for init to complete
+        condition: service_completed_successfully # Wait for init to complete
       mysql:
         condition: service_healthy
       postgres_analytics:
@@ -125,7 +130,7 @@ services:
       postgres_airflow:
         condition: service_healthy
       airflow-init:
-        condition: service_completed_successfully  # Wait for init to complete
+        condition: service_completed_successfully # Wait for init to complete
       mysql:
         condition: service_healthy
       postgres_analytics:
@@ -138,15 +143,15 @@ services:
     image: mysql:8.4
     container_name: staging
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: mysql_db
-      MYSQL_USER: mysql_user
-      MYSQL_PASSWORD: mysql_pass
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - mysql_staging_data:/var/lib/mysql
       - ./sql/init_staging.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "mysql_user", "-pmysql_pass"]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -159,15 +164,15 @@ services:
     image: postgres:14-alpine
     container_name: analytics
     environment:
-      POSTGRES_USER: psql_user
-      POSTGRES_PASSWORD: psql_pass
-      POSTGRES_DB: psql_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_analytics_data:/var/lib/postgresql/data,
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U psql_user -d psql_db"]
+      test: [ "CMD-SHELL", "pg_isready -U psql_user -d psql_db" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -179,6 +184,7 @@ volumes:
   postgres_airflow_data:
   postgres_analytics_data:
   mysql_staging_data:
+
 
 networks:
   flight_network:

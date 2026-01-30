@@ -1,6 +1,8 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, avg, count, when, desc
 
+import os
+
 # Initialize Spark Session
 jars_path = "/opt/jars/mysql-connector-j-9.5.0.jar,/opt/jars/postgresql-42.7.6.jar"
 spark = SparkSession.builder \
@@ -11,10 +13,14 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 # 1. Load from MySQL (Silver Table: flight_prices_clean)
-mysql_url = "jdbc:mysql://mysql:3306/mysql_db"
+mysql_user = os.environ.get("MYSQL_USER")
+mysql_pass = os.environ.get("MYSQL_PASSWORD")
+mysql_db = os.environ.get("MYSQL_DATABASE")
+mysql_url = f"jdbc:mysql://mysql:3306/{mysql_db}"
+
 mysql_props = {
-    "user": "mysql_user", 
-    "password": "mysql_pass", 
+    "user": mysql_user, 
+    "password": mysql_pass, 
     "driver": "com.mysql.cj.jdbc.Driver"
 }
 
@@ -48,10 +54,14 @@ popular_routes = df.groupBy("source", "destination") \
     .orderBy(desc("route_booking_count"))
 
 # 5. Write results to PostgreSQL Analytics DB (Gold Layer)
-pg_url = "jdbc:postgresql://postgres_analytics:5432/psql_db"
+pg_user = os.environ.get("POSTGRES_USER")
+pg_pass = os.environ.get("POSTGRES_PASSWORD")
+pg_db = os.environ.get("POSTGRES_DB")
+
+pg_url = f"jdbc:postgresql://postgres_analytics:5432/{pg_db}"
 pg_props = {
-    "user": "psql_user", 
-    "password": "psql_pass", 
+    "user": pg_user, 
+    "password": pg_pass, 
     "driver": "org.postgresql.Driver"
 }
 

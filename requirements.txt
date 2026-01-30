@@ -1,2 +1,5 @@
 pyspark==3.5.1
 python-decouple==3.8
+pandas
+sqlalchemy
+pytest
