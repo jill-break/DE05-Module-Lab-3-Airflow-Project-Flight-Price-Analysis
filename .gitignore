@@ -20,3 +20,7 @@ venv/
 .env
 
 run
+jars/
+spark/
+dags/__pycache__/
+dags/scripts/*
